@@ -1,6 +1,7 @@
 setup.py
 rabbitMqConnector/__init__.py
 rabbitMqConnector/rabbitMqConnector.py
+rabbitMqConnector/test.py
 rabbitMqConnector.egg-info/PKG-INFO
 rabbitMqConnector.egg-info/SOURCES.txt
 rabbitMqConnector.egg-info/dependency_links.txt

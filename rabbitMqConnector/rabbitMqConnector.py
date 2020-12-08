@@ -50,28 +50,45 @@ class RabbitMqConnector():
             logger.error("rest_api_config is mandatory for susbscriptions")
             return 
        
+        
+        logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
+        self.rabbit_server_config=rabbit_server_config
+        self.creds=pika.PlainCredentials(rabbit_server_config['user'], rabbit_server_config['password'])
+        self.heartbeat=31
+        self.start = True 
+        self.subRouteMap={}
+        self.consume_failure=0
+        self.sender_properties=sender_properties
+        self.receiver_properties=receiver_properties
+        self.rest_api_config=rest_api_config
+        self.create_hierarchy()
+        self.callback=callback
+        self.failures=0
+        self.check_connection_thread = threading.Thread(target=self.check_connection_state)
+        
         try:
-            logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
-            self.rabbit_server_config=rabbit_server_config
-            self.creds=pika.PlainCredentials(rabbit_server_config['user'], rabbit_server_config['password'])
-            self.heartbeat=31
-            self.start = True 
-            self.subRouteMap={}
-            self.consume_failure=0
-            self.sender_properties=sender_properties
-            self.receiver_properties=receiver_properties
-            self.rest_api_config=rest_api_config
-            self.create_hierarchy()
-            self.init_sender_connection()
-            self.init_receiver_connection()
-            self.callback=callback
+            self.init_connections()
+        except Exception as e:
+            logger.error("some error occurred initializing connection retrying-{}".format(str(e)))
             self.check_connection_thread.start()
             
-        except Exception as e:
-            logger.error("some error occurred initializing connection -{}".format(str(e)))
+        self.check_connection_thread.start()
+        
             
+            
+            # self.failures +=1
+            # if self.failures<3:
+            #     self.init_connections()
+            # else:
+            #     logger.error("failed to create connection")
+            #     raise Exception("failed to create connection")
+                
+            
+    def init_connections(self):
+        self.init_sender_connection()
+        self.init_receiver_connection()
         
-        
+           
     def init_sender_connection(self):
         self.sender_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbit_server_config['host'],credentials=self.creds,heartbeat=self.heartbeat))
         self.sender_channel=self.sender_connection.channel()
@@ -117,7 +134,6 @@ class RabbitMqConnector():
                 
         self.receiver_channel.basic_consume(queue=receiver_queue, on_message_callback=self.receive, auto_ack=True)
         self.consume_thread = threading.Thread(target=self.consume)
-        self.check_connection_thread = threading.Thread(target=self.check_connection_state)
         self.consume_thread.start()
         
         
@@ -192,13 +208,28 @@ class RabbitMqConnector():
             self.sender_channel.basic_publish(exchange=self.sender_properties["exchange"], routing_key=routingKey,body=json.dumps(message))
         except Exception as e:
             logger.info("failed to send message-{}".format(str(e)))
+            return
         if showMessage:
             logger.info("successfully sent message on routing key-{}, message-{}".format(routingKey,message))
         else:
             logger.info("successfully sent message on routing key-{}".format(routingKey))
             
+    def send_response(self,props,message,showMessage=False):
+        try:
+            self.sender_channel.basic_publish(exchange='', routing_key=props.reply_to,properties=pika.BasicProperties(correlation_id = props.correlation_id),body=json.dumps(message))
+        except Exception as e:
+            logger.info("failed to send message-{}".format(str(e)))
+            return
+            
+        if showMessage:
+            logger.info("successfully sent message on routing key-{}, message-{}".format(props.reply_to,message))
+        else:
+            logger.info("successfully sent message on routing key-{}".format(props.reply_to))
+
+            
         
     def receive(self,ch, method, properties, body):
+        
         message=body.decode('utf8').replace("'", '"')
         try:
             message=json.loads(message)
@@ -208,7 +239,7 @@ class RabbitMqConnector():
         logger.info("message received from topic-{},body-{}".format(str(routingKey),str(message)))
         
         if routingKey != 'test':
-            self.callback(message)
+            self.callback(message,properties)
          
     def consume(self):
         logger.info("receiver started consuming")
