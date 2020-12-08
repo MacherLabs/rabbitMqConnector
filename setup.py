@@ -3,7 +3,7 @@ from setuptools import setup
 setup( 
     name='rabbitMqConnector',
     
-    version='0.01',
+    version='0.1',
     description='Face demographics based on age and gender',
     url='http://demo.vedalabs.in/',
 
@@ -12,7 +12,7 @@ setup(
     author_email='tech@gmail.com',
 
     packages=['rabbitMqConnector'],
-    install_requires=['pika','requests','anytree','python-dotenv'] ,
+    install_requires=['pika','requests','anytree'] ,
 
     zip_safe=False
     )

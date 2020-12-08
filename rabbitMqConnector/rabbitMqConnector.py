@@ -12,22 +12,19 @@ from anytree import Node, search
 from anytree.exporter import DotExporter
 import requests
 from requests.auth import HTTPBasicAuth
-from dotenv import load_dotenv
-import os
-abs_path=os.path.abspath(os.path.dirname(__file__))
-print(abs_path)
-ENV_PATH = abs_path+'/.env'
-load_dotenv(dotenv_path=ENV_PATH)
+
+def callback(message):
+    logger.info("message received finally-{}".format(message))
         
 class RabbitMqConnector():
     
-    def __init__(self,host,callback,consumerSubscriptions=None,consumerTopics=None,producerSubscriptions=None,producerTopic=None,**kwargs):
+    def __init__(self,host,callback=callback,consumerSubscriptions=None,consumerTopics=None,producerSubscriptions=None,producerTopic=None,**kwargs):
        
         rabbit_server_config=kwargs.get("rabbit_server_config",{
         'host':host,
-        'user':os.getenv('RABBIT_USER'),
-        'password':os.getenv('RABBIT_PASSWORD'),
-        'port':kwargs.get("port",5672)
+        'user':'guest',
+        'password':'guest',
+        'port':5672
         })
         sender_properties={
         "exchange":kwargs.get("sender_exchange","RESOURCES_UPDATES"),
@@ -48,12 +45,10 @@ class RabbitMqConnector():
         "queue":"standard",
         "consumerTopics":consumerTopics
         }
-        rest_api_config=kwargs.get("rest_api_config",{
-        'VEDA_USER':os.getenv('VEDA_USER'),
-        'VEDA_PASSWORD':os.getenv('VEDA_PASSWORD'),
-        'VEDA_SERVER_URL':os.getenv('VEDA_SERVER_URL'),
-        'VEDA_API_VERSION':os.getenv('VEDA_API_VERSION')
-        })
+        rest_api_config=kwargs.get("rest_api_config",{})
+        if (producerSubscriptions is not None or consumerSubscriptions is not None) and rest_api_config=={}:
+            logger.error("rest_api_config is mandatory for susbscriptions")
+            return 
        
         try:
             logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
@@ -353,13 +348,6 @@ class RabbitMqConnector():
         except:
             pass
         self.consume_thread.join()
-        
-        
-        
-        
-def callback(message):
-    logger.info("message received finally")
-    
     
         
 if __name__ == '__main__':
