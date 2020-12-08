@@ -1,0 +1,4 @@
+pika
+requests
+anytree
+python-dotenv
