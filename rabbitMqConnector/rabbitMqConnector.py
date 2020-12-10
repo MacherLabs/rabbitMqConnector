@@ -73,15 +73,7 @@ class RabbitMqConnector():
             self.check_connection_thread.start()
             
         self.check_connection_thread.start()
-        
-            
-            
-            # self.failures +=1
-            # if self.failures<3:
-            #     self.init_connections()
-            # else:
-            #     logger.error("failed to create connection")
-            #     raise Exception("failed to create connection")
+        time.sleep(1)
                 
             
     def init_connections(self):
@@ -428,8 +420,5 @@ if __name__ == '__main__':
                     'topic':'#',
                     'eventType': 'Updated'
                 }],consumerTopics=["mask"],producerTopic="tortoise")
-
-    
-    
         
         
