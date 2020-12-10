@@ -6,14 +6,14 @@ def callback(msg):
     
 RABBIT_SERVER_CONFIG={
     'host':"queue.vedalabs.in",
-    'user':'guest',
-    'password':'guest',
+    'user':'',
+    'password':'',
     'port':5672
 }
 
 REST_API_CONFIG={
-    'VEDA_USER':'saurabhk6@vedalabs.in',
-    'VEDA_PASSWORD':'password',
+    'VEDA_USER':'',
+    'VEDA_PASSWORD':'',
     'VEDA_SERVER_URL':'http://localhost:8001',
     'VEDA_API_VERSION':'v1/rest'
 }
