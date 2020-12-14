@@ -339,6 +339,10 @@ class RabbitMqConnector():
         routingKey=method.routing_key
 
         if routingKey != 'test':
+            print("="*50)
+            print("Consuming Message")
+            print("Consumer topic",routingKey)
+            print("="*50)
             if routingKey in self.subRoutes:
                 self.topicCallback(message,properties,method)
             else:
@@ -368,6 +372,10 @@ class RabbitMqConnector():
                     message=json.loads(self.replacecontrolchar(message))
                 except Exception as e:
                     logger.info("error loading message to json-{}".format(str(e)))
+            print("="*50)
+            print("Consuming Message")
+            print("Consumer topic",topic)
+            print("="*50)
             return message
         return None
     
