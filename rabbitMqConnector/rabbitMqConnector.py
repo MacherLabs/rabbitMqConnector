@@ -12,20 +12,29 @@ from anytree import Node, search
 from anytree.exporter import DotExporter
 import requests
 from requests.auth import HTTPBasicAuth
+from special_literals import *
 
-def callback(message):
+def callback(message,props,method):
+    print("="*50)
+    print("Consuming Message")
+    print("consumer topic",method.routing_key)
+    print("="*50)
     logger.info("message received finally-{}".format(message))
+    
+    
+
         
 class RabbitMqConnector():
     
-    def __init__(self,host,callback=callback,consumerSubscriptions=None,consumerTopics=None,producerSubscriptions=None,producerTopic=None,**kwargs):
+    def __init__(self,rabbit_server_config,
+                 topicCallback=callback,
+                 subscriptionCallback=callback,
+                 consumerSubscriptions=None,
+                 consumerTopics=None,
+                 consumerSyncTopics=None,
+                 producerSubscriptions=None,
+                 producerTopic=None,**kwargs):
        
-        rabbit_server_config=kwargs.get("rabbit_server_config",{
-        'host':host,
-        'user':'guest',
-        'password':'guest',
-        'port':5672
-        })
         sender_properties={
         "exchange":kwargs.get("sender_exchange","RESOURCES_UPDATES"),
         "exchange_type":"topic",
@@ -43,7 +52,10 @@ class RabbitMqConnector():
         "auto_delete":False,
         "subscriptions":consumerSubscriptions,
         "queue":"standard",
-        "consumerTopics":consumerTopics
+        "consumerTopics":consumerTopics,
+        "consumerSyncTopics":consumerSyncTopics,
+        "consumerSyncField":kwargs.get("consumerSyncField",None),
+        "queueId":kwargs.get('queueId',"")
         }
         rest_api_config=kwargs.get("rest_api_config",{})
         if (producerSubscriptions is not None or consumerSubscriptions is not None) and rest_api_config=={}:
@@ -57,12 +69,14 @@ class RabbitMqConnector():
         self.heartbeat=31
         self.start = True 
         self.subRouteMap={}
+        self.subRoutes=[]
         self.consume_failure=0
         self.sender_properties=sender_properties
         self.receiver_properties=receiver_properties
         self.rest_api_config=rest_api_config
         self.create_hierarchy()
-        self.callback=callback
+        self.topicCallback=topicCallback
+        self.subscriptionCallback=subscriptionCallback
         self.failures=0
         self.check_connection_thread = threading.Thread(target=self.check_connection_state)
         
@@ -72,7 +86,9 @@ class RabbitMqConnector():
             logger.error("some error occurred initializing connection retrying-{}".format(str(e)))
             self.check_connection_thread.start()
             
-        self.check_connection_thread.start()
+        if not self.check_connection_thread.is_alive():
+            self.check_connection_thread.start()
+        
         time.sleep(1)
                 
             
@@ -91,17 +107,23 @@ class RabbitMqConnector():
             durable=self.sender_properties["durable"],
             auto_delete=self.sender_properties["auto_delete"])
         
+        
+    def get_queue(self,topic):
+        queueId=str(self.receiver_properties.get("queueId",""))
+        return queueId+'-'+topic
+    
     
     def init_receiver_connection(self):
         self.receiver_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbit_server_config['host'],credentials=self.creds,heartbeat=self.heartbeat))
         self.receiver_channel=self.receiver_connection.channel()
+        self.sync_receiver_channels={}
         self.receiver_channel.exchange_declare(
             exchange=self.receiver_properties["exchange"],
             exchange_type=self.receiver_properties["exchange_type"],
             passive=self.receiver_properties["passive"],
             durable=self.receiver_properties["durable"],
             auto_delete=self.receiver_properties["auto_delete"])
-        receiver_queue=self.receiver_properties.get("queue","standard") 
+
         consumerTopics=self.receiver_properties.get("consumerTopics",None)
         subscriptions=self.receiver_properties.get("subscriptions",None)
         routingKeys=[]
@@ -116,20 +138,37 @@ class RabbitMqConnector():
                 logger.info("subscribing to routes-{}".format(routingKey))
                 #self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
         
-        receiver_queue='-'.join(routingKeys)
-        self.receiver_channel.queue_declare(queue=receiver_queue)
-        logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,receiver_queue))
-        routingKeys.append('test')
-        for routingKey in routingKeys:
-            self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
-            
-                
-        self.receiver_channel.basic_consume(queue=receiver_queue, on_message_callback=self.receive, auto_ack=True)
-        self.consume_thread = threading.Thread(target=self.consume)
-        self.consume_thread.start()
+        if (len(routingKeys)>0):
+            receiver_queue=self.get_queue('-'.join(routingKeys))
+            self.receiver_channel.queue_declare(queue=receiver_queue)
+            logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,receiver_queue))
+            routingKeys.append('test')
+            for routingKey in routingKeys:
+                self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
+            self.receiver_channel.basic_consume(queue=receiver_queue, on_message_callback=self.receive, auto_ack=True)
+            self.consume_thread = threading.Thread(target=self.consume)
+            self.consume_thread.start()
         
-        
-        
+        # If consumers are sync, make a different queue for each consumer  
+        if self.receiver_properties['consumerSyncTopics'] is not None:
+            for consumerTopic in self.receiver_properties['consumerSyncTopics']:
+                channel=self.receiver_connection.channel()
+                channel.exchange_declare(
+                    exchange=self.receiver_properties["exchange"],
+                    exchange_type=self.receiver_properties["exchange_type"],
+                    passive=self.receiver_properties["passive"],
+                    durable=self.receiver_properties["durable"],
+                    auto_delete=self.receiver_properties["auto_delete"])
+                queue_name= self.get_queue(consumerTopic)
+                channel.queue_declare(queue=queue_name) 
+                channel.queue_bind(queue=queue_name,exchange=self.receiver_properties["exchange"], routing_key=consumerTopic)
+                logger.info("listening to sync queue-{}".format(queue_name))
+                self.sync_receiver_channels[consumerTopic]=channel
+
+    def reinit_connections(self):
+        self.reinit_sender()
+        self.reinit_receiver()
+      
     def reinit_sender(self):
         logger.info("reinitializing sender connection")
         try:
@@ -154,35 +193,42 @@ class RabbitMqConnector():
         self.init_receiver_connection()
         
     def check_connection_state(self):
-        
         while(self.start):
+            state='OK'
+            try:
             
-            logger.info("checking connection state with server")
-            
-            self.send(producerTopic='test',message={"message":"ping---------------pong"})
-                    
-            if self.sender_connection.is_closed or self.sender_channel.is_closed:
-                try:
-                    self.reinit_sender()
-                except Exception as e:
-                    logger.info("failed to open sender connection..retrying")
-                    time.sleep(self.heartbeat)
-                    self.check_connection_state()
-            
-            if self.receiver_connection.is_closed or self.receiver_channel.is_closed:
-                try:
-                    self.reinit_receiver()
-                except Exception as e:
-                    logger.info("failed to open receiver connection..retrying")
-                    time.sleep(self.heartbeat)
-                    self.check_connection_state()
+                logger.info("checking connection state with server")
                 
+                self.send(producerTopic='test',message={"message":"ping---------------pong"})
+                        
+                if self.sender_connection.is_closed or self.sender_channel.is_closed:
+                    logger.info("sender connection closed")
+                    state='BROKEN'
+                    try:
+                        self.reinit_sender()
+                    except Exception as e:
+                        logger.info("failed to open sender connection..retrying")
+                
+                if self.receiver_connection.is_closed or self.receiver_channel.is_closed:
+                    logger.info("receiver connection closed")
+                    state='BROKEN'
+                    try:
+                        self.reinit_receiver()
+                    except Exception as e:
+                        logger.info("failed to open receiver connection..retrying")
+            except Exception as e:
+                state='BROKEN'
+                logger.info("failed to open connections..retrying")
+                try:
+                    self.reinit_connections()
+                except:
+                    pass
+            logger.info("connection state->{}".format(state))
             time.sleep(self.heartbeat)
                 
         
     def send(self,message={"message":"ping------pong"},subscription=None,producerTopic=None,showMessage=False):
-        
-        #import pdb;pdb.set_trace()
+    
         if producerTopic is None:
             producerTopic=self.sender_properties["producerTopic"]
         if subscription is None:
@@ -201,10 +247,17 @@ class RabbitMqConnector():
         except Exception as e:
             logger.info("failed to send message-{}".format(str(e)))
             return
-        if showMessage:
-            logger.info("successfully sent message on routing key-{}, message-{}".format(routingKey,message))
-        else:
-            logger.info("successfully sent message on routing key-{}".format(routingKey))
+        
+        if routingKey!= 'test':
+            print("="*50)
+            print("Producing Message")
+            print("Producer topic",routingKey)
+            print("="*50)
+            
+            if showMessage:
+                logger.info("successfully sent message on routing key-{}, message-{}".format(routingKey,message))
+            else:
+                logger.info("successfully sent message on routing key-{}".format(routingKey))
             
     def send_response(self,props,message,showMessage=False):
         try:
@@ -218,21 +271,31 @@ class RabbitMqConnector():
         else:
             logger.info("successfully sent message on routing key-{}".format(props.reply_to))
 
-            
+    def replacecontrolchar(self,text):
+        for a,b in mapnonprint.items():
+            if a in text:
+                logger.warning("Json Decode replacecontrolchar:{} with {}".format(a,b))
+                text = text.replace(a,b)
+        return text       
         
     def receive(self,ch, method, properties, body):
-        
         message=body.decode('utf8').replace("'", '"')
         try:
-            message=json.loads(message)
+            message=json.loads(message1)
         except Exception as e:
-            logger.info("error loading message to json-{}".format(str(e)))
+            try:
+                message=json.loads(self.replacecontrolchar(message))
+            except Exception as e:
+                logger.info("error loading message to json-{}".format(str(e)))
         routingKey=method.routing_key
-        logger.info("message received from topic-{},body-{}".format(str(routingKey),str(message)))
-        
+
         if routingKey != 'test':
-            self.callback(message,properties)
-         
+            if routingKey in self.subRoutes:
+                self.topicCallback(message,properties,method)
+            else:
+                self.subscriptionCallback(message,properties,method)
+                
+               
     def consume(self):
         logger.info("receiver started consuming")
         try:
@@ -244,7 +307,59 @@ class RabbitMqConnector():
                 self.consume()
             if self.start == True:
                 self.reinit_receiver()
-            
+                
+    def consume_sync(self,topic):
+        method_frame, header_frame, body = self.sync_receiver_channels[topic].basic_get(self.get_queue(topic))
+        if method_frame:
+            try:
+                message=body.decode('utf8').replace("'", '"')
+                message=json.loads(message1)
+            except Exception as e:
+                try:
+                    message=json.loads(self.replacecontrolchar(message))
+                except Exception as e:
+                    logger.info("error loading message to json-{}".format(str(e)))
+            return message
+        return None
+    
+    def consume_sync_all(self):
+        startTime=time.time()
+        finalMessage={}
+        topics=self.receiver_properties['consumerSyncTopics'].copy()
+        topicLength=len(topics)
+        syncId=None
+        syncField=self.receiver_properties['consumerSyncField']
+        while(len(topics)>0):
+            for topic in topics:
+                out=self.consume_sync(topic)
+                if out:
+                    finalMessage[topic]=out
+                    topics.remove(topic)
+           
+            if len(topics)==topicLength:
+                return None
+                
+            if (time.time()-startTime)>10:
+                logger.info("sync time exceeded, failed to sync")
+                self.flush_sync_consumer_queues()
+                return None
+        if syncField:
+            for key in finalMessage.keys():
+                id=finalMessage[key][syncField]
+                if syncId:
+                    if id!=syncId:
+                        logger.info("consumers not in sync..flushing queue")
+                        self.flush_sync_consumer_queues()
+                        return None   
+                else:
+                    syncId=id
+                    
+                    
+        return finalMessage
+    
+    def flush_sync_consumer_queues(self):
+        for topic in self.receiver_properties['consumerSyncTopics']:
+            self.sync_receiver_channels[topic].queue_purge(self.get_queue(topic))
         
     def stop(self):
         self.consume_thread.join()
@@ -312,6 +427,7 @@ class RabbitMqConnector():
             else:
                 finalRoute=finalRoute[:-1]
         self.subRouteMap[str(subscription)] = finalRoute
+        self.subRoutes.append(finalRoute)
         return finalRoute
         
     def findRoute(self,nodeName):

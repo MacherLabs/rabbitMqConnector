@@ -1,7 +1,7 @@
 import rabbitMqConnector as Connector
+import time
 
-def callback(msg):
-    print(msg)
+
     
     
 RABBIT_SERVER_CONFIG={
@@ -18,7 +18,7 @@ REST_API_CONFIG={
     'VEDA_API_VERSION':'v1/rest'
 }
     
-client=Connector.RabbitMqConnector(host="queue.vedalabs.in",callback=callback,consumerTopics=["mask"],producerSubscriptions={"device":"7d9c247d-ebf2-44bd-a851-b64521107d84","topic":"commands"},rabbit_server_config=RABBIT_SERVER_CONFIG,rest_api_config=REST_API_CONFIG)
+client=Connector.RabbitMqConnector(host="queue.vedalabs.in",consumerSyncTopics=["a","b"],producerTopic="cool",rabbit_server_config=RABBIT_SERVER_CONFIG,rest_api_config=REST_API_CONFIG,sender_exchange="BEHAVIOUR_EVENTS",receiver_exchange="BEHAVIOUR_EVENTS",queueId=146)
 
 message={
   "from" : "userid of sender",
@@ -45,4 +45,20 @@ message={
     ]
   }
 }
+time.sleep(5)
 client.send(message=message)
+
+print("message:",message)
+client.flush_sync_consumer_queues()
+client.send(producerTopic="a",message={"message":"i am a","source_id":10})
+message=client.consume_sync_all()
+print("message received:",message)
+time.sleep(1)
+client.send(producerTopic="a",message={"message":"i am a1","source_id":20})
+client.send(producerTopic="b",message={"message":"i am b1","source_id":22})
+client.send(producerTopic="hello",message={"message":"i am hello"})
+message=client.consume_sync_all()
+
+print("message received:",message)
+
+    
