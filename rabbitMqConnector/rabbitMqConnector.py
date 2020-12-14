@@ -12,7 +12,56 @@ from anytree import Node, search
 from anytree.exporter import DotExporter
 import requests
 from requests.auth import HTTPBasicAuth
-from .special_literals import *
+
+mapnonprint = {
+	'\0':'^@',
+	'\1':'^A',
+	'\2':'^B',
+	'\3':'^C',
+	'\4':'^D',
+	'\5':'^E',
+	'\6':'^F',
+	'\a':'^G',
+	'\b':'^H',
+	'\t':'^I',
+	'\n':'^J',
+	'\v':'^K',
+	'\f':'^L',
+	'\r':'^M',
+	'\x00':'^@',
+	'\x01':'^A',
+	'\x02':'^B',
+	'\x03':'^C',
+	'\x04':'^D',
+	'\x05':'^E',
+	'\x06':'^F',
+	'\x07':'^G',
+	'\x08':'^H',
+	'\x09':'^I',
+	'\x0a':'^J',
+	'\x0b':'^K',
+	'\x0c':'^L',
+	'\x0d':'^M',
+	'\x0e':'^N',
+	'\x0f':'^O',
+	'\x10':'^P',
+	'\x11':'^Q',
+	'\x12':'^R',
+	'\x13':'^S',
+	'\x14':'^T',
+	'\x15':'^U',
+	'\x16':'^V',
+	'\x17':'^W',
+	'\x18':'^X',
+	'\x19':'^Y',
+	'\x1a':'^Z',
+	'\x1b':'^[',
+	'\x1c':'^\\',
+	'\x1d':'^]',
+	'\x1e':'^^',
+	'\x1f':'^-',
+}
+
 
 def callback(message,props,method):
     print("="*50)
