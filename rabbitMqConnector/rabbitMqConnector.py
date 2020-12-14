@@ -344,9 +344,9 @@ class RabbitMqConnector():
             print("Consumer topic",routingKey)
             print("="*50)
             if routingKey in self.subRoutes:
-                self.topicCallback(message,properties,method)
-            else:
                 self.subscriptionCallback(message,properties,method)
+            else:
+                self.topicCallback(message,properties,method)
                 
                
     def consume(self):
