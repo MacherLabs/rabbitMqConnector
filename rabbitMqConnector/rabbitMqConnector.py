@@ -115,7 +115,7 @@ class RabbitMqConnector():
         logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
         self.rabbit_server_config=rabbit_server_config
         self.creds=pika.PlainCredentials(rabbit_server_config['user'], rabbit_server_config['password'])
-        self.heartbeat=31
+        self.heartbeat=30
         self.start = True 
         self.subRouteMap={}
         self.subRoutes=[]
@@ -134,7 +134,8 @@ class RabbitMqConnector():
         except Exception as e:
             logger.error("some error occurred initializing connection retrying-{}".format(str(e)))
             self.check_connection_thread.start()
-            
+        
+        
         if not self.check_connection_thread.is_alive():
             self.check_connection_thread.start()
         
@@ -245,6 +246,7 @@ class RabbitMqConnector():
         while(self.start):
             state='OK'
             try:
+                time.sleep(self.heartbeat)
             
                 logger.info("checking connection state with server")
                 
@@ -273,7 +275,6 @@ class RabbitMqConnector():
                 except:
                     pass
             logger.info("connection state->{}".format(state))
-            time.sleep(self.heartbeat)
                 
         
     def send(self,message={"message":"ping------pong"},subscription=None,producerTopic=None,showMessage=False):
