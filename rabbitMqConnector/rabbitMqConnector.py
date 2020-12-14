@@ -12,7 +12,7 @@ from anytree import Node, search
 from anytree.exporter import DotExporter
 import requests
 from requests.auth import HTTPBasicAuth
-from special_literals import *
+from .special_literals import *
 
 def callback(message,props,method):
     print("="*50)
