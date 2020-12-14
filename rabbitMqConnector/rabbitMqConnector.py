@@ -248,7 +248,7 @@ class RabbitMqConnector():
             
                 logger.info("checking connection state with server")
                 
-                self.send(producerTopic='test',message={"message":"ping---------------pong"})
+                #self.send(producerTopic='test',message={"message":"ping---------------pong"})
                         
                 if self.sender_connection.is_closed or self.sender_channel.is_closed:
                     logger.info("sender connection closed")
