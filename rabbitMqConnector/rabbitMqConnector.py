@@ -189,7 +189,7 @@ class RabbitMqConnector():
                 #self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
         
         if (len(routingKeys)>0):
-            receiver_queue=self.get_queue('-'.join(routingKeys))
+            receiver_queue=self.get_queue("")+'-async'
             self.receiver_channel.queue_declare(queue=receiver_queue)
             logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,receiver_queue))
             routingKeys.append('test')
@@ -419,8 +419,6 @@ class RabbitMqConnector():
         for topic in self.receiver_properties['consumerSyncTopics']:
             self.sync_receiver_channels[topic].queue_purge(self.get_queue(topic))
         
-    def stop(self):
-        self.consume_thread.join()
         
     def create_hierarchy(self):
         logger.info('resource hierarchy being setup!')
@@ -544,7 +542,8 @@ class RabbitMqConnector():
             self.receiver_connection.close()
         except:
             pass
-        self.consume_thread.join()
+        if self.consume_thread:
+            self.consume_thread.join()
     
         
 if __name__ == '__main__':
