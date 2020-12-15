@@ -542,8 +542,10 @@ class RabbitMqConnector():
             self.receiver_connection.close()
         except:
             pass
-        if self.consume_thread:
+        try:
             self.consume_thread.join()
+        except:
+            pass
     
         
 if __name__ == '__main__':
