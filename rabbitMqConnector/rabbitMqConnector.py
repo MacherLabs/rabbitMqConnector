@@ -363,7 +363,7 @@ class RabbitMqConnector():
                 self.reinit_receiver()
                 
     def consume_sync(self,topic):
-        method_frame, header_frame, body = self.sync_receiver_channels[topic].basic_get(self.get_queue(topic))
+        method_frame, header_frame, body = self.sync_receiver_channels[topic].basic_get(self.get_queue(topic),auto_ack=True)
         if method_frame:
             try:
                 message=body.decode('utf8').replace("'", '"')
