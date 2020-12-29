@@ -114,7 +114,10 @@ class RabbitMqConnector():
         
         logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
         self.rabbit_server_config=rabbit_server_config
-        self.creds=pika.PlainCredentials(rabbit_server_config['user'], rabbit_server_config['password'])
+        self.sender_rabbit_server_config=kwargs.get("sender_rabbit_server_config",rabbit_server_config)
+        self.receiver_rabbit_server_config=kwargs.get("receiver_rabbit_server_config",rabbit_server_config)
+        self.sender_creds=pika.PlainCredentials(self.sender_rabbit_server_config['user'], self.sender_rabbit_server_config['password'])
+        self.receiver_creds=pika.PlainCredentials(self.receiver_rabbit_server_config['user'], self.receiver_rabbit_server_config['password'])
         self.heartbeat=30
         self.start = True 
         self.subRouteMap={}
@@ -134,8 +137,7 @@ class RabbitMqConnector():
         except Exception as e:
             logger.error("some error occurred initializing connection retrying-{}".format(str(e)))
             self.check_connection_thread.start()
-        
-        
+                    
         if not self.check_connection_thread.is_alive():
             self.check_connection_thread.start()
         
@@ -148,7 +150,7 @@ class RabbitMqConnector():
         
            
     def init_sender_connection(self):
-        self.sender_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbit_server_config['host'],credentials=self.creds,heartbeat=self.heartbeat))
+        self.sender_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.sender_rabbit_server_config['host'],credentials=self.sender_creds,heartbeat=self.heartbeat))
         self.sender_channel=self.sender_connection.channel()
         self.sender_channel.exchange_declare(
             exchange=self.sender_properties["exchange"],
@@ -164,9 +166,11 @@ class RabbitMqConnector():
     
     
     def init_receiver_connection(self):
-        self.receiver_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbit_server_config['host'],credentials=self.creds,heartbeat=self.heartbeat))
+        #import pdb;pdb.set_trace()
+        self.receiver_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.receiver_rabbit_server_config['host'],credentials=self.receiver_creds,heartbeat=self.heartbeat))
         self.receiver_channel=self.receiver_connection.channel()
         self.sync_receiver_channels={}
+        self.receiver_queue_async=None
         self.receiver_channel.exchange_declare(
             exchange=self.receiver_properties["exchange"],
             exchange_type=self.receiver_properties["exchange_type"],
@@ -176,32 +180,43 @@ class RabbitMqConnector():
 
         consumerTopics=self.receiver_properties.get("consumerTopics",None)
         subscriptions=self.receiver_properties.get("subscriptions",None)
+        consumerSyncTopics=self.receiver_properties.get("consumerSyncTopics",None)
+        
+        self.add_subscriptions(subscriptions,consumerTopics,consumerSyncTopics)
+        
+                
+    def add_subscriptions(self,subscriptions=None,consumerTopics=None,consumerSyncTopics=None):
+        #import pdb;pdb.set_trace()
         routingKeys=[]
         if consumerTopics is not None:
             for topic in consumerTopics:
                 routingKeys.append(topic)
-    
-        if subscriptions is not None:
+                
+        if  subscriptions is not None:     
             for subscription in subscriptions:
                 routingKey=self.getRoutingKey(subscription)
                 routingKeys.append(routingKey)
                 logger.info("subscribing to routes-{}".format(routingKey))
-                #self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
         
         if (len(routingKeys)>0):
-            receiver_queue=self.get_queue("")+'-async'
-            self.receiver_channel.queue_declare(queue=receiver_queue)
-            logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,receiver_queue))
-            routingKeys.append('test')
-            for routingKey in routingKeys:
-                self.receiver_channel.queue_bind(queue=receiver_queue,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
-            self.receiver_channel.basic_consume(queue=receiver_queue, on_message_callback=self.receive, auto_ack=True)
-            self.consume_thread = threading.Thread(target=self.consume)
-            self.consume_thread.start()
-        
+            if not self.receiver_queue_async:
+                self.receiver_queue_async=self.get_queue("")+'-async'
+                self.receiver_channel.queue_declare(queue=self.receiver_queue_async)
+                logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,self.receiver_queue_async))
+                routingKeys.append('test')
+                for routingKey in routingKeys:
+                    self.receiver_channel.queue_bind(queue=self.receiver_queue_async,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
+                self.receiver_channel.basic_consume(queue=self.receiver_queue_async, on_message_callback=self.receive, auto_ack=True)
+                self.consume_thread = threading.Thread(target=self.consume)
+                if not self.consume_thread.is_alive():
+                    self.consume_thread.start()
+            else:
+                self.receiver_properties["subscriptions"].extend(subscriptions)
+                self.reinit_receiver()
+                    
         # If consumers are sync, make a different queue for each consumer  
-        if self.receiver_properties['consumerSyncTopics'] is not None:
-            for consumerTopic in self.receiver_properties['consumerSyncTopics']:
+        if consumerSyncTopics is not None:
+            for consumerTopic in consumerSyncTopics:
                 channel=self.receiver_connection.channel()
                 channel.exchange_declare(
                     exchange=self.receiver_properties["exchange"],
@@ -213,8 +228,8 @@ class RabbitMqConnector():
                 channel.queue_declare(queue=queue_name) 
                 channel.queue_bind(queue=queue_name,exchange=self.receiver_properties["exchange"], routing_key=consumerTopic)
                 logger.info("listening to sync queue-{}".format(queue_name))
-                self.sync_receiver_channels[consumerTopic]=channel
-
+                self.sync_receiver_channels[consumerTopic]=channel    
+                
     def reinit_connections(self):
         self.reinit_sender()
         self.reinit_receiver()
@@ -233,7 +248,18 @@ class RabbitMqConnector():
     def reinit_receiver(self):
         logger.info("reinitializing receiver connection")
         try:
+            self.receiver_channel.stop_consuming()
+        except:
+            logger.info("some error in stopping consuming")
+            pass
+            
+        try:
             self.consume_thread.join()
+        except:
+            logger.info("some error in closing consumer thread")
+            pass
+        
+        try:
             self.receiver_connection.close()
             self.receiver_channel.close()
         except Exception as e:
@@ -259,7 +285,8 @@ class RabbitMqConnector():
                         self.reinit_sender()
                     except Exception as e:
                         logger.info("failed to open sender connection..retrying")
-                
+                        
+                self.receiver_connection.process_data_events()
                 if self.receiver_connection.is_closed or self.receiver_channel.is_closed:
                     logger.info("receiver connection closed")
                     state='BROKEN'
@@ -351,13 +378,15 @@ class RabbitMqConnector():
                 
                
     def consume(self):
+        time.sleep(5)
         logger.info("receiver started consuming")
+        # wait for sometime
         try:
             self.receiver_channel.start_consuming()
         except Exception as e:
             logger.info("some error occured while consuming-{}".format(str(e)))
             self.consume_failure +=1
-            if self.consume_failure<5:
+            if self.consume_failure<5 and self.start==True:
                 self.consume()
             if self.start == True:
                 self.reinit_receiver()
@@ -531,17 +560,31 @@ class RabbitMqConnector():
             raise RuntimeError("Failed to fetch cloud resource of type: {}, id: {} and filter: {}".format(res_type, res_id, res_filter))
             
         return resp
-    
+            
     
     def stop(self):
-        logger.info("stopping connector")
+        logger.info("stopping connector & ignoring all errors..helpless-please don't judge!")
+        
         self.start=False
-        self.check_connection_thread.join()
-        self.sender_connection.close()
+        try:
+            self.check_connection_thread.join()
+        except:
+            pass
+        try:
+            self.sender_connection.close()
+        except:
+            pass
+        
+        try:
+            self.receiver_channel.stop_consuming()
+        except:
+            pass
+        
         try:
             self.receiver_connection.close()
         except:
             pass
+        
         try:
             self.consume_thread.join()
         except:
