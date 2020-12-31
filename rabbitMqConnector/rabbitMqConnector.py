@@ -118,7 +118,7 @@ class RabbitMqConnector():
         self.receiver_rabbit_server_config=kwargs.get("receiver_rabbit_server_config",rabbit_server_config)
         self.sender_creds=pika.PlainCredentials(self.sender_rabbit_server_config['user'], self.sender_rabbit_server_config['password'])
         self.receiver_creds=pika.PlainCredentials(self.receiver_rabbit_server_config['user'], self.receiver_rabbit_server_config['password'])
-        self.heartbeat=kwargs.get("heartbeat",30)
+        self.heartbeat=30
         self.start = True 
         self.subRouteMap={}
         self.subRoutes=[]
@@ -199,8 +199,6 @@ class RabbitMqConnector():
                 routingKey=self.getRoutingKey(subscription)
                 routingKeys.append(routingKey)
                 logger.info("subscribing to routes-{}".format(routingKey))
-        
-        routingKeys.append(self.testTopic)
         
         if (len(routingKeys)>0):
             if not self.receiver_queue_async:
@@ -285,13 +283,14 @@ class RabbitMqConnector():
                     time.sleep(0.01)
                 self.sendLock=True
                 try:
-                    message={"message":"ping-----------pong"}
-                    self.sender_channel.basic_publish(exchange=self.sender_properties["exchange"], routing_key=self.testTopic,body=json.dumps(message))
+                    self.sender_connection.process_data_events()
+                    #message={"message":"ping-----------pong"}
+                    #self.sender_channel.basic_publish(exchange=self.sender_properties["exchange"], routing_key=self.testTopic,body=json.dumps(message))
                 except Exception as e:
                     self.sendLock=False
                     logger.info("failed to send test message-{}".format(str(e)))
                 self.sendLock=False
-                #self.sender_connection.process_data_events()
+                
                 if self.sender_connection.is_closed or self.sender_channel.is_closed:
                     logger.info("sender connection closed")
                     state='BROKEN'
@@ -300,7 +299,7 @@ class RabbitMqConnector():
                     except Exception as e:
                         logger.info("failed to open sender connection..retrying")
                         
-                #self.receiver_connection.process_data_events()
+                self.receiver_connection.process_data_events()
                 if self.receiver_connection.is_closed or self.receiver_channel.is_closed:
                     logger.info("receiver connection closed")
                     state='BROKEN'
@@ -422,22 +421,26 @@ class RabbitMqConnector():
                 self.reinit_receiver()
                 
     def consume_sync(self,topic):
-        method_frame, header_frame, body = self.sync_receiver_channels[topic].basic_get(self.get_queue(topic),auto_ack=True)
-        if method_frame:
-            try:
-                message=body.decode('utf8').replace("'", '"')
-                message=json.loads(message1)
-            except Exception as e:
+        try:
+            method_frame, header_frame, body = self.sync_receiver_channels[topic].basic_get(self.get_queue(topic),auto_ack=True)
+            if method_frame:
                 try:
-                    message=json.loads(self.replacecontrolchar(message))
+                    message=body.decode('utf8').replace("'", '"')
+                    message=json.loads(message1)
                 except Exception as e:
-                    logger.info("error loading message to json-{}".format(str(e)))
-            print("="*50)
-            print("Consuming Message")
-            print("Consumer topic",topic)
-            print("="*50)
-            return message
-        return None
+                    try:
+                        message=json.loads(self.replacecontrolchar(message))
+                    except Exception as e:
+                        logger.info("error loading message to json-{}".format(str(e)))
+                print("="*50)
+                print("Consuming Message")
+                print("Consumer topic",topic)
+                print("="*50)
+                return message
+            return None
+        except Exception as e:
+            logger.info("some exception occurred in sync consuming-{}".format(str(e)))
+            return None
     
     def consume_sync_all(self):
         startTime=time.time()
