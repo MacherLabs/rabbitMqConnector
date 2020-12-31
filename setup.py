@@ -12,7 +12,7 @@ setup(
     author_email='tech@gmail.com',
 
     packages=['rabbitMqConnector'],
-    install_requires=['pika','requests','anytree'] ,
+    install_requires=['pika==1.1.0','requests','anytree'] ,
 
     zip_safe=False
     )

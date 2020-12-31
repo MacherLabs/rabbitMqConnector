@@ -118,7 +118,7 @@ class RabbitMqConnector():
         self.receiver_rabbit_server_config=kwargs.get("receiver_rabbit_server_config",rabbit_server_config)
         self.sender_creds=pika.PlainCredentials(self.sender_rabbit_server_config['user'], self.sender_rabbit_server_config['password'])
         self.receiver_creds=pika.PlainCredentials(self.receiver_rabbit_server_config['user'], self.receiver_rabbit_server_config['password'])
-        self.heartbeat=30
+        self.heartbeat=kwargs.get("heartbeat",30)
         self.start = True 
         self.subRouteMap={}
         self.subRoutes=[]
@@ -130,6 +130,8 @@ class RabbitMqConnector():
         self.topicCallback=topicCallback
         self.subscriptionCallback=subscriptionCallback
         self.failures=0
+        self.testTopic=self.get_queue("")+'-test'
+        self.sendLock=False
         self.check_connection_thread = threading.Thread(target=self.check_connection_state)
         
         try:
@@ -198,12 +200,13 @@ class RabbitMqConnector():
                 routingKeys.append(routingKey)
                 logger.info("subscribing to routes-{}".format(routingKey))
         
+        routingKeys.append(self.testTopic)
+        
         if (len(routingKeys)>0):
             if not self.receiver_queue_async:
                 self.receiver_queue_async=self.get_queue("")+'-async'
                 self.receiver_channel.queue_declare(queue=self.receiver_queue_async)
                 logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,self.receiver_queue_async))
-                routingKeys.append('test')
                 for routingKey in routingKeys:
                     self.receiver_channel.queue_bind(queue=self.receiver_queue_async,exchange=self.receiver_properties["exchange"], routing_key=routingKey)
                 self.receiver_channel.basic_consume(queue=self.receiver_queue_async, on_message_callback=self.receive, auto_ack=True)
@@ -235,6 +238,7 @@ class RabbitMqConnector():
         self.reinit_receiver()
       
     def reinit_sender(self):
+        time.sleep(5)
         logger.info("reinitializing sender connection")
         try:
             self.sender_connection.close()
@@ -246,6 +250,7 @@ class RabbitMqConnector():
         
    
     def reinit_receiver(self):
+        time.sleep(5)
         logger.info("reinitializing receiver connection")
         try:
             self.receiver_channel.stop_consuming()
@@ -275,9 +280,18 @@ class RabbitMqConnector():
                 time.sleep(self.heartbeat)
             
                 logger.info("checking connection state with server")
-                
-                #self.send(producerTopic='test',message={"message":"ping---------------pong"})
-                self.sender_connection.process_data_events()
+                while(self.sendLock):
+                    logger.info("waiting for send lock to clear")
+                    time.sleep(0.01)
+                self.sendLock=True
+                try:
+                    message={"message":"ping-----------pong"}
+                    self.sender_channel.basic_publish(exchange=self.sender_properties["exchange"], routing_key=self.testTopic,body=json.dumps(message))
+                except Exception as e:
+                    self.sendLock=False
+                    logger.info("failed to send test message-{}".format(str(e)))
+                self.sendLock=False
+                #self.sender_connection.process_data_events()
                 if self.sender_connection.is_closed or self.sender_channel.is_closed:
                     logger.info("sender connection closed")
                     state='BROKEN'
@@ -286,7 +300,7 @@ class RabbitMqConnector():
                     except Exception as e:
                         logger.info("failed to open sender connection..retrying")
                         
-                self.receiver_connection.process_data_events()
+                #self.receiver_connection.process_data_events()
                 if self.receiver_connection.is_closed or self.receiver_channel.is_closed:
                     logger.info("receiver connection closed")
                     state='BROKEN'
@@ -295,6 +309,7 @@ class RabbitMqConnector():
                     except Exception as e:
                         logger.info("failed to open receiver connection..retrying")
             except Exception as e:
+                self.sendLock=False
                 state='BROKEN'
                 logger.info("failed to open connections..retrying")
                 try:
@@ -318,12 +333,19 @@ class RabbitMqConnector():
         elif subscription is not None:
             logger.info("sending to subscription-{}".format(subscription))
             routingKey=self.getRoutingKey(subscription)
-    
+            
+        while(self.sendLock):
+            logger.info("waiting for send lock to clear")
+            time.sleep(0.01)
+        
+        self.sendLock=True
         try:
             self.sender_channel.basic_publish(exchange=self.sender_properties["exchange"], routing_key=routingKey,body=json.dumps(message))
         except Exception as e:
+            self.sendLock=False
             logger.info("failed to send message-{}".format(str(e)))
-            return
+            return 
+        self.sendLock=False
         
         if routingKey!= 'test':
             print("="*50)
@@ -335,11 +357,19 @@ class RabbitMqConnector():
                 logger.info("successfully sent message on routing key-{}, message-{}".format(routingKey,message))
             else:
                 logger.info("successfully sent message on routing key-{}".format(routingKey))
+        return True
             
     def send_response(self,props,message,showMessage=False):
+        
+        while(self.sendLock):
+            logger.info("waiting for send lock to clear")
+            time.sleep(0.01)
+        self.sendLock=True
         try:
             self.sender_channel.basic_publish(exchange='', routing_key=props.reply_to,properties=pika.BasicProperties(correlation_id = props.correlation_id),body=json.dumps(message))
+            self.sendLock=False
         except Exception as e:
+            self.sendLock=False
             logger.info("failed to send message-{}".format(str(e)))
             return
             
@@ -366,7 +396,7 @@ class RabbitMqConnector():
                 logger.info("error loading message to json-{}".format(str(e)))
         routingKey=method.routing_key
 
-        if routingKey != 'test':
+        if routingKey != self.testTopic:
             print("="*50)
             print("Consuming Message")
             print("Consumer topic",routingKey)
