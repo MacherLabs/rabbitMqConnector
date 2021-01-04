@@ -120,7 +120,7 @@ class RabbitMqConnector():
         self.receiver_rabbit_server_config=kwargs.get("receiver_rabbit_server_config",rabbit_server_config)
         self.sender_creds=pika.PlainCredentials(self.sender_rabbit_server_config['user'], self.sender_rabbit_server_config['password'])
         self.receiver_creds=pika.PlainCredentials(self.receiver_rabbit_server_config['user'], self.receiver_rabbit_server_config['password'])
-        self.heartbeat=3
+        self.heartbeat=kwargs.get("sender_rabbit_server_config",30)
         self.start = True 
         self.subRouteMap={}
         self.subRoutes=[]
