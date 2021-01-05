@@ -13,6 +13,7 @@ from anytree.exporter import DotExporter
 import requests
 from requests.auth import HTTPBasicAuth
 import traceback
+from rabbitmq_admin import AdminAPI
 
 mapnonprint = {
 	'\0':'^@',
@@ -143,9 +144,15 @@ class RabbitMqConnector():
         self.sender_channel=None    
         self.receiver_connection_async=None 
         self.receiver_channel=None 
-        self.receiver_channel_async=None 
+        self.receiver_channel_async=None
+        protocol=kwargs.get("protocol",'http')
+        try:
+            adminUrl="{}://{}:{}".format(protocol,self.sender_rabbit_server_config['host'],self.sender_rabbit_server_config['port'])
+            self.adminApi=AdminAPI(url=adminUrl, 
+                                auth=(self.sender_rabbit_server_config['user'],self.sender_rabbit_server_config['password']))
+        except Exception as e:
+            logger.info("failed to initialize admin api-{}".format(str(e)))
   
-        
         try:
             self.init_connections()
         except Exception as e:
@@ -157,7 +164,12 @@ class RabbitMqConnector():
         
         time.sleep(1)
                 
-            
+    
+    def get_all_routingKeys(self,queue,exchange=None):
+        
+        bindings = self.adminApi.list_bindings()
+        return [x['routing_key'] for x in bindings if x['destination'] == queue ]
+        
     def init_connections(self):
         self.init_sender_connection()
         self.init_receiver_connection()
@@ -212,7 +224,8 @@ class RabbitMqConnector():
                 
     def add_subscriptions(self,subscriptions=None,consumerTopics=None,consumerSyncTopics=None):
         
-        # If consumers are sync, make a different queue for each consumer  
+        # If consumers are sync, make a different queue for each consumer 
+        currentSyncKeys=[] 
         if consumerSyncTopics is not None:
             for consumerTopic in consumerSyncTopics:
                 channel=self.receiver_connection.channel()
@@ -223,10 +236,12 @@ class RabbitMqConnector():
                     durable=self.receiver_properties["durable"],
                     auto_delete=self.receiver_properties["auto_delete"])
                 queue_name= self.get_queue(consumerTopic)
-                channel.queue_declare(queue=queue_name) 
+                channel.queue_declare(queue=queue_name)
+                currentSyncKeys.append(consumerTopic)
                 channel.queue_bind(queue=queue_name,exchange=self.receiver_properties["exchange"], routing_key=consumerTopic)
                 logger.info("listening to sync queue-{}".format(queue_name))
                 self.sync_receiver_channels[consumerTopic]=channel 
+                
                 
         routingKeys=[]
         if consumerTopics is not None:
@@ -238,6 +253,10 @@ class RabbitMqConnector():
                 routingKey=self.getRoutingKey(subscription)
                 subsKeys.append(routingKey)
         
+        currentSyncKeys=[]
+        
+        currentSyncKeys=currentSyncKeys+routingKeys+subsKeys
+        
         if (len(routingKeys)>0 or len(subsKeys)>0):
             if not self.receiver_queue_async:
                 self.receiver_queue_async=self.get_queue("")+'-async'
@@ -248,6 +267,19 @@ class RabbitMqConnector():
                 logger.info("subscribing to subscriptions-{}, queue-{}".format(subsKeys,self.receiver_queue_async))
                 for routingKey in subsKeys:
                     self.receiver_channel_async.queue_bind(queue=self.receiver_queue_async,exchange=self.receiver_properties["subscription_exchange"], routing_key=routingKey)    
+                
+                #Cleanup unused keys
+                try:
+                    alreadyExistingKeys=alreadyExistingKeys=self.get_all_routingKeys( self.receiver_queue_async)
+                    unusedKeys=[x for x in alreadyExistingKeys if x not in currentSyncKeys]
+                    
+                    for key in unusedKeys:
+                            
+                        self.receiver_channel_async.queue_unbind(queue=self.receiver_queue_async,exchange=self.receiver_properties["exchange"], routing_key=key)
+                        self.receiver_channel_async.queue_unbind(queue=self.receiver_queue_async,exchange=self.receiver_properties["subscription_exchange"], routing_key=key)
+                except Exception as e:
+                    logger.info("some exception occurred while removing previous async subscriptions-{}".format(str(e)))
+                    
                 
                 self.receiver_channel_async.basic_consume(queue=self.receiver_queue_async, on_message_callback=self.receive, auto_ack=True)
                 self.consume_thread = threading.Thread(target=self.consume)
@@ -265,7 +297,6 @@ class RabbitMqConnector():
    
                 
     def reinit_connections(self):
-        #import pdb;pdb.set_trace()
         self.reinit_sender()
         self.reinit_receiver()
       
@@ -378,7 +409,7 @@ class RabbitMqConnector():
                                   
             except Exception as e:
                 logger.info(traceback.format_exc())
-                #import pdb;pdb.set_trace()
+               
                 state='BROKEN'
                 logger.info("failed to open connections..retrying")
                 try:
@@ -480,9 +511,6 @@ class RabbitMqConnector():
         except Exception as e:
             logger.info("some exception occurred -{}".format(str(e)))
             print(traceback.format_exc())
-            #import pdb;pdb.set_trace()
-            
-                
                
     def consume(self):
         #time.sleep(5)
