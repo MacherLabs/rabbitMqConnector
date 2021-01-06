@@ -376,22 +376,21 @@ class RabbitMqConnector():
         
                 if not self.receiveLock: 
                     receiver_status=True
-                    if self.receiver_connection:
-                        try:
-                            self.receiver_connection.process_data_events()
-                        except:
-                            pass
+                    
+                    try:
+                        self.receiver_connection.process_data_events()
+                    except:
+                        pass
+                    
+                    if self.receiver_connection.is_closed:
+                        receiver_status=False
                         
-                        if self.receiver_connection.is_closed:
-                            receiver_status=False
-                        
-                    if self.receiver_connection_async:
-                        try:
-                            self.receiver_connection_async.process_data_events()
-                        except:
-                            pass
-                        if self.receiver_connection_async.is_closed:
-                            receiver_status=False
+                    try:
+                        self.receiver_connection_async.process_data_events()
+                    except:
+                        pass
+                    if self.receiver_connection_async.is_closed:
+                        receiver_status=False
                     
                     if receiver_status == False:    
                         logger.info("receiver connection closed")
