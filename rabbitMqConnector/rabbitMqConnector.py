@@ -118,7 +118,13 @@ class RabbitMqConnector():
         logger.info("rabbit server config-{}, rest_api_config-{} ,sender_properties-{} ,receiver_properties-{}".format(rabbit_server_config,rest_api_config,sender_properties,receiver_properties))
         self.rabbit_server_config=rabbit_server_config
         self.sender_rabbit_server_config=kwargs.get("sender_rabbit_server_config",rabbit_server_config)
+        if self.sender_rabbit_server_config is None:
+            self.sender_rabbit_server_config=self.rabbit_server_config
+            
         self.receiver_rabbit_server_config=kwargs.get("receiver_rabbit_server_config",rabbit_server_config)
+        if self.receiver_rabbit_server_config is None:
+            self.receiver_rabbit_server_config=self.rabbit_server_config
+            
         self.sender_creds=pika.PlainCredentials(self.sender_rabbit_server_config['user'], self.sender_rabbit_server_config['password'])
         self.receiver_creds=pika.PlainCredentials(self.receiver_rabbit_server_config['user'], self.receiver_rabbit_server_config['password'])
         self.heartbeat=kwargs.get("heartbeat",30)
@@ -195,7 +201,7 @@ class RabbitMqConnector():
         
         self.receiver_connection = pika.BlockingConnection(pika.ConnectionParameters(host=self.receiver_rabbit_server_config['host'],credentials=self.receiver_creds,heartbeat=self.heartbeat))
         self.receiver_channel=self.receiver_connection.channel()
-        self.receiver_connection_async = pika.BlockingConnection(pika.ConnectionParameters(host=self.receiver_rabbit_server_config['host'],credentials=self.receiver_creds,heartbeat=self.heartbeat))
+        self.receiver_connection_async = pika.BlockingConnection(pika.ConnectionParameters(host=self.rabbit_server_config['host'],credentials=self.receiver_creds,heartbeat=self.heartbeat))
         self.receiver_channel_async=self.receiver_connection_async.channel()
         self.sync_receiver_channels={}
         
