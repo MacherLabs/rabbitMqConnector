@@ -553,6 +553,7 @@ class RabbitMqConnector():
         except Exception as e:
             logger.info("some exception occurred in sync consuming-{}".format(str(e)))
             #print(traceback.format_exc())
+            time.sleep(self.heartbeat)
             return None
     
     def consume_sync_all(self):
