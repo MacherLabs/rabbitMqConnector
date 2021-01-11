@@ -254,7 +254,7 @@ class RabbitMqConnector():
             for topic in consumerTopics:
                 routingKeys.append(topic)
         subsKeys=[]     
-        if  subscriptions is not None:     
+        if  subscriptions is not None:    
             for subscription in subscriptions:
                 routingKey=self.getRoutingKey(subscription)
                 subsKeys.append(routingKey)
@@ -265,6 +265,7 @@ class RabbitMqConnector():
         
         if (len(routingKeys)>0 or len(subsKeys)>0):
             if not self.receiver_queue_async:
+                self.receiver_properties["subscriptions"]=subscriptions
                 self.receiver_queue_async=self.get_queue("")+'-async'
                 self.receiver_channel_async.queue_declare(queue=self.receiver_queue_async)
                 logger.info("subscribing to routes-{}, queue-{}".format(routingKeys,self.receiver_queue_async))
