@@ -151,9 +151,10 @@ class RabbitMqConnector():
         self.receiver_connection_async=None 
         self.receiver_channel=None 
         self.receiver_channel_async=None
+        self.deletedRoutingKeys=[]
         protocol=kwargs.get("protocol",'http')
         try:
-            adminUrl="{}://{}:{}".format(protocol,self.sender_rabbit_server_config['host'],self.sender_rabbit_server_config['port'])
+            adminUrl="{}://{}:{}".format(protocol,self.rabbit_server_config['host'],self.sender_rabbit_server_config['port'])
             self.adminApi=AdminAPI(url=adminUrl, 
                                 auth=(self.sender_rabbit_server_config['user'],self.sender_rabbit_server_config['password']))
         except Exception as e:
@@ -224,7 +225,6 @@ class RabbitMqConnector():
         consumerTopics=self.receiver_properties.get("consumerTopics",None)
         subscriptions=self.receiver_properties.get("subscriptions",None)   
         consumerSyncTopics=self.receiver_properties.get("consumerSyncTopics",None)
-        
         self.add_subscriptions(subscriptions,consumerTopics,consumerSyncTopics)
         
                 
@@ -278,9 +278,9 @@ class RabbitMqConnector():
                 try:
                     alreadyExistingKeys=alreadyExistingKeys=self.get_all_routingKeys( self.receiver_queue_async)
                     unusedKeys=[x for x in alreadyExistingKeys if x not in currentSyncKeys]
-                    
+                    self.deletedRoutingKeys=unusedKeys
                     for key in unusedKeys:
-                            
+                         
                         self.receiver_channel_async.queue_unbind(queue=self.receiver_queue_async,exchange=self.receiver_properties["exchange"], routing_key=key)
                         self.receiver_channel_async.queue_unbind(queue=self.receiver_queue_async,exchange=self.receiver_properties["subscription_exchange"], routing_key=key)
                 except Exception as e:
@@ -358,7 +358,7 @@ class RabbitMqConnector():
         while(self.start):
             state='OK'
             try:
-                time.sleep(self.heartbeat)
+                time.sleep(self.heartbeat-5)
             
                 logger.info("checking connection state with server")
                 try:
@@ -379,7 +379,7 @@ class RabbitMqConnector():
                 else:
                     self.sender_failed_attempts=0
                     
-        
+                #logger.info("********************************receiveLock********************************--{}".format(self.receiveLock))
                 if not self.receiveLock: 
                     receiver_status=True
                     
@@ -387,7 +387,7 @@ class RabbitMqConnector():
                         self.receiver_connection.process_data_events()
                     except:
                         pass
-                    
+                    #logger.info("receiver.connection status*******-{}".format(self.receiver_channel.is_closed))
                     if self.receiver_connection.is_closed:
                         receiver_status=False
                         
@@ -395,6 +395,8 @@ class RabbitMqConnector():
                         self.receiver_connection_async.process_data_events()
                     except:
                         pass
+                    
+                    #logger.info("receiver.connection status*******-{}".format(self.receiver_channel_async.is_closed))
                     if self.receiver_connection_async.is_closed:
                         receiver_status=False
                     
@@ -421,7 +423,7 @@ class RabbitMqConnector():
                     self.reinit_connections()
                 except:
                     pass
-            logger.info("connection state->{}".format(state))
+            logger.info("connection state->{}-{}".format(state,time.time()))
                 
         
     def send(self,message={"message":"ping------pong"},subscription=None,producerTopic=None,showMessage=False):
@@ -503,7 +505,9 @@ class RabbitMqConnector():
                 except Exception as e:
                     logger.info("error loading message to json-{}".format(str(e)))
             routingKey=method.routing_key
-
+            if routingKey in self.deletedRoutingKeys:
+                logger.info("message received from unused route now--skipping!")
+                return
             if routingKey != self.testTopic:
                 print("="*50)
                 print("Consuming Message")
