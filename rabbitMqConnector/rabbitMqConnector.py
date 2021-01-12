@@ -151,7 +151,7 @@ class RabbitMqConnector():
         self.receiver_connection_async=None 
         self.receiver_channel=None 
         self.receiver_channel_async=None
-        self.deletedRoutingKeys=[]
+        self.usedRoutingKeys=[]
         protocol=kwargs.get("protocol",'http')
         try:
             adminUrl="{}://{}:{}".format(protocol,self.rabbit_server_config['host'],self.sender_rabbit_server_config['port'])
@@ -248,16 +248,18 @@ class RabbitMqConnector():
                 logger.info("listening to sync queue-{}".format(queue_name))
                 self.sync_receiver_channels[consumerTopic]=channel 
                 
-                
+        self.usedRoutingKeys=[]      
         routingKeys=[]
         if consumerTopics is not None:
             for topic in consumerTopics:
                 routingKeys.append(topic)
+                self.usedRoutingKeys.append(topic)
         subsKeys=[]     
         if  subscriptions is not None:    
             for subscription in subscriptions:
                 routingKey=self.getRoutingKey(subscription)
                 subsKeys.append(routingKey)
+                self.usedRoutingKeys.append(routingKey)
         
         currentSyncKeys=[]
         
@@ -279,7 +281,6 @@ class RabbitMqConnector():
                 try:
                     alreadyExistingKeys=alreadyExistingKeys=self.get_all_routingKeys( self.receiver_queue_async)
                     unusedKeys=[x for x in alreadyExistingKeys if x not in currentSyncKeys]
-                    self.deletedRoutingKeys=unusedKeys
                     for key in unusedKeys:
                          
                         self.receiver_channel_async.queue_unbind(queue=self.receiver_queue_async,exchange=self.receiver_properties["exchange"], routing_key=key)
@@ -506,9 +507,11 @@ class RabbitMqConnector():
                 except Exception as e:
                     logger.info("error loading message to json-{}".format(str(e)))
             routingKey=method.routing_key
-            if routingKey in self.deletedRoutingKeys:
+            
+            if routingKey not in self.usedRoutingKeys:
                 logger.info("message received from unused route now--skipping!")
                 return
+            
             if routingKey != self.testTopic:
                 print("="*50)
                 print("Consuming Message")
