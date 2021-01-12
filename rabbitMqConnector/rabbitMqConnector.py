@@ -227,6 +227,14 @@ class RabbitMqConnector():
         consumerSyncTopics=self.receiver_properties.get("consumerSyncTopics",None)
         self.add_subscriptions(subscriptions,consumerTopics,consumerSyncTopics)
         
+    def remove_subscriptions(self,subscriptions=None):
+        logger.info("removing subscriptions-{}".format(str(subscriptions)))
+        if self.receiver_properties["subscriptions"] is not None:
+            for subscription in subscriptions:
+                self.receiver_properties["subscriptions"].remove(subscription)
+            self.reinit_receiver()
+        logger.info("remaining subscriptions-{}".format(str(self.receiver_properties["subscriptions"])))
+            
                 
     def add_subscriptions(self,subscriptions=None,consumerTopics=None,consumerSyncTopics=None):
         
