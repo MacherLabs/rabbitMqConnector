@@ -507,8 +507,8 @@ class RabbitMqConnector():
                 except Exception as e:
                     logger.info("error loading message to json-{}".format(str(e)))
             routingKey=method.routing_key
-            
-            if routingKey not in self.usedRoutingKeys:
+            logger.info("message received from routing key-{}".format(routingKey))
+            if str(routingKey) not in self.usedRoutingKeys:
                 logger.info("message received from unused route now--skipping!")
                 return
             
