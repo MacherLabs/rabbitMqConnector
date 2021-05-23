@@ -3,6 +3,7 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.info("Loaded " + __name__)
+logging.getLogger("pika").propagate = False
 
 import pika
 import threading
@@ -363,6 +364,7 @@ class RabbitMqConnector():
         except:
             pass
         self.receiveLock=False
+    
         
     def check_connection_state(self):
         while(self.start):
@@ -425,7 +427,7 @@ class RabbitMqConnector():
                         self.receiver_failed_attempts=0
                                   
             except Exception as e:
-                logger.info(traceback.format_exc())
+                logger.debug(traceback.format_exc())
                
                 state='BROKEN'
                 logger.info("failed to open connections..retrying")
@@ -518,7 +520,7 @@ class RabbitMqConnector():
             logger.info("message received from routing key-{}".format(routingKey))
             if str(routingKey) not in self.usedRoutingKeys:
                 logger.info("message received from unused route now--skipping!")
-                return
+                #return
             
             if routingKey != self.testTopic:
                 print("="*50)
@@ -528,10 +530,11 @@ class RabbitMqConnector():
                 if routingKey in self.subRoutes:
                     self.subscriptionCallback(message,properties,method)
                 else:
-                    self.topicCallback(message,properties,method)
+                    self.subscriptionCallback(message,properties,method)
+                    #self.topicCallback(message,properties,method)
         except Exception as e:
             logger.info("some exception occurred -{}".format(str(e)))
-            print(traceback.format_exc())
+            logger.debug(traceback.format_exc())
                
     def consume(self):
         #time.sleep(5)
@@ -541,7 +544,7 @@ class RabbitMqConnector():
             self.receiver_channel_async.start_consuming()
         except Exception as e:
             logger.info("some error occured while consuming..async receiver should restart after heartbeat".format(str(e)))
-            print(traceback.format_exc())
+            logger.debug(traceback.format_exc())
            
                 
     def consume_sync(self,topic):
@@ -569,6 +572,7 @@ class RabbitMqConnector():
         except Exception as e:
             logger.info("some exception occurred in sync consuming-{}".format(str(e)))
             #print(traceback.format_exc())
+            logger.debug(traceback.format_exc())
             time.sleep(self.heartbeat)
             return None
     
