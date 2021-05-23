@@ -4,7 +4,7 @@ setup(
     name='rabbitMqConnector',
     
     version='0.1',
-    description='Face demographics based on age and gender',
+    description='RabbitMq Connector client library',
     url='http://demo.vedalabs.in/',
 
     # Author details    
