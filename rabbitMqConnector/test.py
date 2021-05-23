@@ -3,22 +3,46 @@ import time
 
 
     
+class test_class():
+  
+  def _init__(self):
+    self.a=0
     
+     
 RABBIT_SERVER_CONFIG={
     'host':"queue.vedalabs.in",
-    'user':'',
-    'password':'',
-    'port':5672
+    'user':'guest',
+    'password':'guest',
+    'port':15672
 }
 
 REST_API_CONFIG={
-    'VEDA_USER':'',
-    'VEDA_PASSWORD':'',
-    'VEDA_SERVER_URL':'http://localhost:8001',
+    'VEDA_USER':'saurabhk6@vedalabs.in',
+    'VEDA_PASSWORD':'password',
+    'VEDA_SERVER_URL':'https://api.staging.vedalabs.in',
     'VEDA_API_VERSION':'v1/rest'
 }
     
-client=Connector.RabbitMqConnector(host="queue.vedalabs.in",consumerSyncTopics=["a","b"],producerTopic="cool",rabbit_server_config=RABBIT_SERVER_CONFIG,rest_api_config=REST_API_CONFIG,sender_exchange="BEHAVIOUR_EVENTS",receiver_exchange="BEHAVIOUR_EVENTS",queueId=146)
+# client=Connector.RabbitMqConnector(rabbit_server_config=RABBIT_SERVER_CONFIG,
+#                                    consumerTopics=["depth_camera_face_behaviour"],
+#                                    consumerSyncTopics=["depth_camera_face_behaviour"],
+#                                    consumerSubscriptions=None,
+#                                    producerTopic="cool",
+#                                    rest_api_config=REST_API_CONFIG,
+#                                    sender_exchange="BEHAVIOUR_EVENTS",
+#                                    receiver_exchange="BEHAVIOUR_EVENTS",queueId=500)
+
+client=Connector.RabbitMqConnector(rabbit_server_config=RABBIT_SERVER_CONFIG,
+                                   consumerTopics=None,
+                                   consumerSyncTopics=['depth_camera_face_behaviour'],
+                                   consumerSubscriptions=None,
+                                   producerTopic="cool",
+                                   rest_api_config=REST_API_CONFIG,
+                                   sender_exchange="BEHAVIOUR_EVENTS",
+                                   receiver_exchange="BEHAVIOUR_EVENTS",queueId=500,
+                                   sender_rabbit_server_config=None,
+                                   receiver_rabbit_server_config=None
+                                   )
 
 message={
   "from" : "userid of sender",
@@ -45,20 +69,38 @@ message={
     ]
   }
 }
-time.sleep(5)
+time.sleep(1)
 client.send(message=message)
 
 print("message:",message)
-client.flush_sync_consumer_queues()
+#client.flush_sync_consumer_queues()
 client.send(producerTopic="a",message={"message":"i am a","source_id":10})
-message=client.consume_sync_all()
+#message=client.consume_sync_all()
 print("message received:",message)
 time.sleep(1)
 client.send(producerTopic="a",message={"message":"i am a1","source_id":20})
 client.send(producerTopic="b",message={"message":"i am b1","source_id":22})
 client.send(producerTopic="hello",message={"message":"i am hello"})
-message=client.consume_sync_all()
 
-print("message received:",message)
+print('********************************************************************************')
+test_obj = test_class()
+if hasattr(test_obj, 'client'):
+  print("motherfucker")
+test_obj.client=client
+
+if hasattr(test_obj, 'client'):
+  print("fuckfucker")
+  test_obj.client.add_subscriptions(subscriptions=[{
+                    "behaviour":'5fc75e3e47074021c36f946b'
+                }])
+#message=client.consume_sync_all()
+
+
+  #print("message received:",message)
+time.sleep(10)
+test_obj.client.remove_subscriptions(subscriptions=[{
+                    "behaviour":'5fc75e3e47074021c36f946b'
+                } ])
+#client.stop()
 
     
