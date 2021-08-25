@@ -630,6 +630,7 @@ class RabbitMqConnector():
         self.recommendations = Node("recommendations",parent=self.organizations)
         self.cameras = Node("cameras",parent=self.hubs)
         self.devices = Node("devices",parent=self.hubs)
+        self.videorecorders = Node("videorecorders",parent=self.hubs)
         self.behaviours = Node("behaviours",parent=self.cameras)
         self.alerts = Node("alerts",parent=self.behaviours)
         self.resourceMap={
@@ -646,6 +647,7 @@ class RabbitMqConnector():
                           "device":"devices",
                           "behaviour":"behaviours",
                           "alert":"alerts",
+                          "videorecorder":"videorecorders"
                          }
         
     def getRoutingKey(self,subscription):
